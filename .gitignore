@@ -1,0 +1,65 @@
+# artefactos de compilacion
+build/
+
+# CLion's CMakeLists.txt is IDE-only tooling for the desktop emulator (see
+# its own header comment); these are its out-of-source build directories.
+cmake-build-*/
+
+# cacheas y artefactos regenerables del taller
+tools/downloads/
+tools/__pycache__/
+__pycache__/
+tools/sheet.png
+tools/import_sheet.png
+tools/emitted_sprites.js
+tools/demo_anim.js
+tools/demo_compare.js
+
+.DS_Store
+tools/pmd_cache/
+tools/pokeapi_cache/
+tools/pokeapi_cache.old/
+
+# Claude Code's own local tooling state (permission allowlists, a runtime
+# session lock with a live PID) -- not part of the game, not portable to
+# another machine.
+.claude/
+
+# The sprite bundles ARE committed, and that is deliberate. They have to be
+# served same-origin from GitHub Pages: release assets send no CORS headers at
+# all, so a browser can never fetch() one, however convenient it would be to
+# keep them out of the repo. Tested with an Origin header; there is no header
+# to be had. Pages sends access-control-allow-origin: *.
+
+# The loose per-species sprite packs are build INTERMEDIATES, not artefacts.
+# They are what pack_bundle.py reads to build web/sprites-*.pak, and the .pak
+# files are what actually gets distributed -- so tracking both puts the same
+# ~105 MB of sprite data in the repo twice. Regenerate with:
+#
+#   python3 tools/pack_pmd.py            # or: kanto / johto / hoenn
+#   python3 tools/make_thumbs.py
+#
+# CREDITS.md already recommends exactly this: ship the code and the scripts and
+# let each user package the sprites from the original sources.
+tools/sdcard/mons/*.bin
+
+# Emulator save files and downloaded generator intermediates: local scratch, not
+# artefacts. They were committed by accident once.
+tamapoke.nvs
+tamapoke.nvs.*
+tools/_*.svg
+backups/
+
+# CREDITS.md flags both of these as NOT safe to publish as committed headers:
+#   avatars.h -- real Nintendo/Game Freak sprites from the pret/pokered
+#     disassembly, not licensed for redistribution. The documented approach
+#     is to ship tools/gen_avatars.py instead, so each user fetches the art
+#     themselves (needs only curl).
+#   backs.h / tools/backs/*.png -- provenance never established. CREDITS.md
+#     says explicitly: confirm the licence or replace them before this repo
+#     is public. Until then, excluded rather than guessed at.
+# Both still exist locally for anyone who already has them; this only keeps
+# them out of a public push.
+avatars.h
+backs.h
+tools/backs/*.png

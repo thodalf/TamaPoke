@@ -1,0 +1,67 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // g++ itself only lives under CLion's bundled MinGW on this machine,
+      // not the user's normal PATH -- prepended here so this task doesn't
+      // depend on whatever shell VS Code's integrated terminal happens to be
+      // using. sdl2-config and python3 are covered separately: both are
+      // shimmed directly into ~/bin (see tools/emu/README or the earlier
+      // debug-setup session), which is already first on PATH everywhere.
+      "label": "emu: build (debug)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["tools/emu/build.sh"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "TAMAPOKE_DEBUG": "1",
+          "PATH": "C:/Users/Thomas/AppData/Local/Programs/CLion/bin/mingw/bin;${env:PATH}"
+        }
+      },
+      "problemMatcher": ["$gcc"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      // Needs SDL2 for MinGW/g++ on PATH, same as tools/emu/build.sh normally.
+      "label": "emu: build (release)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["tools/emu/build.sh"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": { "PATH": "C:/Users/Thomas/AppData/Local/Programs/CLion/bin/mingw/bin;${env:PATH}" }
+      },
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      // Needs arduino-cli on PATH. FQBN mirrors the one documented in CLAUDE.md.
+      // --optimize-for-debug swaps LTO/-Os for -Og -g3.
+      //
+      // arduino-cli requires the sketch folder to be named exactly like its
+      // main .ino file (TamaPoke.ino -> folder "TamaPoke"), but this checkout
+      // is named "TamaPoke-main" (the GitHub zip-download default), so
+      // ${workspaceFolder} itself fails with "main file missing from sketch".
+      // A junction folder "TamaPoke" was created next to it, pointing back at
+      // this same checkout, purely to satisfy that naming rule -- both paths
+      // are the same files on disk. Recreate it if the checkout ever moves:
+      //   New-Item -ItemType Junction -Path <parent>\TamaPoke -Target <this folder>
+      "label": "firmware: compile (debug)",
+      "type": "shell",
+      "command": "arduino-cli",
+      "args": [
+        "compile",
+        "--fqbn",
+        "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB",
+        "--optimize-for-debug",
+        "--build-path",
+        "${workspaceFolder}/build",
+        "D:/GoogleDownload/TamaPoke-main/TamaPoke"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    }
+  ]
+}

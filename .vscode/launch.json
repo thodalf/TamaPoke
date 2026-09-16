@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Desktop emulator: no board needed. Needs g++/gdb (MinGW-w64) and SDL2 on PATH.
+      //
+      // --sprites is passed explicitly rather than relying on the binary's
+      // own baked-in default: that default comes from build.sh's `pwd`,
+      // which under Git Bash/MSYS is POSIX-style ("/d/..."), and a native
+      // Windows fopen() cannot resolve that -- every sprite silently failed
+      // to load even with real files sitting right there. VS Code's own
+      // ${workspaceFolder} is already a proper Windows path, so this sidesteps
+      // it entirely rather than trying to fix path translation generally.
+      "name": "Emulator (gdb)",
+      "type": "cppdbg",
+      "request": "launch",
+      "preLaunchTask": "emu: build (debug)",
+      "program": "${workspaceFolder}/tools/emu/tamapoke-emu",
+      "args": ["--scale", "2", "--sprites", "${workspaceFolder}/tools/sdcard/mons"],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "environment": [
+        { "name": "PATH", "value": "C:/Users/Thomas/AppData/Local/Programs/CLion/bin/mingw/bin;D:/vcpkg/installed/x64-mingw-dynamic/bin;${env:PATH}" }
+      ],
+      "externalConsole": false
+    },
+    {
+      // Attaches to a board over its built-in USB-JTAG via OpenOCD, using the
+      // ESP-IDF toolchain already installed under ~/.espressif. Does NOT flash --
+      // the board must already be running a build made with the "firmware:
+      // compile (debug)" task (same --build-path), or symbols won't match.
+      //
+      // If the toolchain version under ~/.espressif changes, update the two
+      // paths below to match.
+      "name": "ESP32-S3 firmware (OpenOCD, attach)",
+      "type": "cppdbg",
+      "request": "launch",
+      "preLaunchTask": "firmware: compile (debug)",
+      "program": "${workspaceFolder}/build/TamaPoke.ino.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/Users/Thomas/.espressif/tools/xtensa-esp-elf-gdb/17.1_20260402/xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb.exe",
+      "debugServerPath": "C:/Users/Thomas/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/openocd-esp32/bin/openocd.exe",
+      "debugServerArgs": "-s C:/Users/Thomas/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260703/openocd-esp32/share/openocd/scripts -f board/esp32s3-builtin.cfg",
+      "serverStarted": "Listening on port 3333 for gdb connections",
+      "filterStderr": true,
+      "setupCommands": [
+        { "text": "target remote localhost:3333" },
+        { "text": "monitor reset halt" }
+      ],
+      "externalConsole": false
+    }
+  ]
+}
