@@ -205,6 +205,13 @@ public:
   // level() working untouched rather than needing a second source of truth.
   bool frozen = false;
   void reviveFrom(const PartyMon &m);
+  // Swaps which creature is live: unlike reviveFrom(), the incoming one KEEPS
+  // AGEING and can still evolve, farewell, retire or run away from here on.
+  // The creature it replaces is not touched by this call -- the caller reads
+  // snapshot() BEFORE calling this and banks the result in the vacated slot,
+  // the same way a farewell does, just without a ceremony.
+  void swapActive(const PartyMon &m);
+  PartyMon snapshot() const;   // the live creature's fields, as a PartyMon
 
   // The player's own name, alongside the badges and the streak: it belongs to
   // whoever is playing, not to the creature, so newEgg() must never clear it.
@@ -473,6 +480,12 @@ private:
   uint8_t ivFromGene(uint8_t gene) const;  // migracion de guardados con genes
   void defTick(bool resting);       // la calma forja la defensa (ver pet.cpp)
   void snapshotForParty();          // copy into endedMon before newEgg() wipes it
+  // Shared by reviveFrom() and swapActive(): copies a banked creature's fields
+  // onto the live Pet. The only intended difference between the two callers is
+  // whether the result keeps ageing -- everything else living in two separate
+  // copies is exactly how reviveFrom() ended up missing trHp after it was
+  // added elsewhere and only one of the two copies was updated.
+  void adoptFrom(const PartyMon &m, bool stayFrozen);
   void checkMedals();
   void tick();
   void applyAutoSleep();

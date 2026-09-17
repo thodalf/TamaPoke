@@ -139,6 +139,10 @@ enum StrId : uint8_t {
   S_TR_VIT,         // row: train vitality (the berry-catch game)
   S_TR_VIT_HINT,    // hint under the VIT row on the training submenu's 2nd page
   S_VIT_GAIN_FMT,   // "VIT +%u" after the berry-catch game
+  // party sheet's left button, when there IS a live pet (not an egg): swap it
+  // for this banked one. Unlike S_REVIVE, the incoming creature keeps ageing.
+  S_MAKE_ACTIVE,
+  S_MAKE_ACTIVE_HINT,  // why it is greyed: mid farewell/runaway/goodbye
   STR_COUNT
 };
 

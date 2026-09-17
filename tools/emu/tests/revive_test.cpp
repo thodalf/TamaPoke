@@ -19,7 +19,7 @@ int main(){
   Pet p; p.begin();
   if (p.awaitingStarter()) p.chooseStarter(4);
   PartyMon m; m.dex=6; m.level=61; m.shiny=1;
-  m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=24; m.trAtk=m.trDef=m.trSpe=35;
+  m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=24; m.trAtk=m.trDef=m.trSpe=35; m.trHp=40;
   m.moves[0]=1; m.moves[1]=2;
   snprintf(m.nick,sizeof(m.nick),"BLAZE");
 
@@ -27,6 +27,10 @@ int main(){
   ck(p.speciesId==6 && p.level()==61, "comes back at the level it was banked at");
   ck(p.shiny && !strcmp(p.nick,"BLAZE"), "keeps its shininess and its name");
   ck(p.moves[0]==1 && p.moves[1]==2, "and its moveset");
+  // trHp joined trAtk/trDef/trSpe after this function was first written, and
+  // only got copied into snapshotForParty() -- reviveFrom() kept silently
+  // dropping it until adoptFrom() unified the two field lists.
+  ck(p.trHp==40, "and its VIT training");
   ck(p.frozen, "and is marked frozen");
 
   // it must not age, however long passes
@@ -51,6 +55,30 @@ int main(){
   // and a brand new egg is a normal life again
   q.newEgg();
   ck(!q.frozen, "a new egg is not frozen");
+
+  // swapActive(): the OTHER way a banked creature becomes live. Unlike
+  // reviveFrom() it is not a companion -- it keeps ageing and can still
+  // evolve, farewell, retire or run away from here on. snapshot() is the
+  // other half: what the creature being swapped OUT gets banked as.
+  Pet r; r.begin();
+  if (r.awaitingStarter()) r.chooseStarter(1);
+  if (r.isEgg()) r.dbgHatchAs(9, false);
+  r.trHp = 12;
+  PartyMon out = r.snapshot();
+  ck(out.dex==r.speciesId && out.level==r.level() && out.trHp==12,
+     "snapshot() describes the live creature, VIT training included");
+
+  PartyMon m2; m2.dex=3; m2.level=30; m2.trHp=18;
+  m2.ivAtk=m2.ivDef=m2.ivSpe=m2.ivHp=20;
+  snprintf(m2.nick,sizeof(m2.nick),"BULBY");
+  r.swapActive(m2);
+  ck(r.speciesId==3 && r.level()==30 && r.trHp==18 && !strcmp(r.nick,"BULBY"),
+     "swapActive() adopts the incoming creature, VIT training included");
+  ck(!r.frozen, "...but stays UNFROZEN, unlike reviveFrom()");
+  uint32_t age0 = r.ageMinutes;
+  for (int i=0;i<10;i++){ g_ms += 60000; r.update(g_ms); }
+  ck(r.ageMinutes > age0, "and keeps ageing afterward");
+
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
 }

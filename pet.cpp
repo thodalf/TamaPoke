@@ -247,8 +247,9 @@ void Pet::tick() {
 // newEgg() is about to wipe every field. Only the two endings the player CHOSE
 // qualify: a runaway ran off after an hour of total neglect, and letting it
 // come back on the team would remove the cost from the one ending that has any.
-// Brings a banked creature back as the live pet, frozen.
-void Pet::reviveFrom(const PartyMon &m) {
+// Shared body for reviveFrom() and swapActive(). See pet.h for why this is
+// one function rather than two near-identical ones.
+void Pet::adoptFrom(const PartyMon &m, bool stayFrozen) {
   if (m.empty()) return;
   ceremony = CER_NONE;
   neglectTicks = 0;
@@ -258,7 +259,7 @@ void Pet::reviveFrom(const PartyMon &m) {
   starterPick = false;
   shiny = m.shiny != 0;
   ivAtk = m.ivAtk; ivDef = m.ivDef; ivSpe = m.ivSpe; ivHp = m.ivHp;
-  trAtk = m.trAtk; trDef = m.trDef; trSpe = m.trSpe;
+  trAtk = m.trAtk; trDef = m.trDef; trSpe = m.trSpe; trHp = m.trHp;
   for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = m.moves[i];
   // its banked level expressed as an age, so level() needs no special case
   ageMinutes = (uint32_t)(m.level ? m.level - 1 : 0) * MINUTES_PER_LEVEL;
@@ -275,11 +276,34 @@ void Pet::reviveFrom(const PartyMon &m) {
   fullness = joy = energy = 80;
   hygiene = 100;
   poops = 0;
-  frozen = true;
+  frozen = stayFrozen;
   strncpy(nick, m.nick, sizeof(nick) - 1);
   nick[sizeof(nick) - 1] = 0;
   registerSpecies(speciesId);
   save();
+}
+
+// Brings a banked creature back as the live pet, frozen.
+void Pet::reviveFrom(const PartyMon &m) { adoptFrom(m, true); }
+
+// Swaps in a banked creature as the live pet, still ageing: see pet.h.
+void Pet::swapActive(const PartyMon &m) { adoptFrom(m, false); }
+
+// The live creature's fields, as a PartyMon -- the same shape
+// snapshotForParty() freezes into endedMon on a farewell/release, but
+// available any time there is a real creature to describe.
+PartyMon Pet::snapshot() const {
+  PartyMon m;
+  m.dex = speciesId;
+  m.level = level();
+  m.medals = medals;
+  m.ivAtk = ivAtk; m.ivDef = ivDef; m.ivSpe = ivSpe; m.ivHp = ivHp;
+  m.trAtk = trAtk; m.trDef = trDef; m.trSpe = trSpe; m.trHp = trHp;
+  m.shiny = shiny ? 1 : 0;
+  for (int i = 0; i < MOVE_SLOTS; i++) m.moves[i] = moves[i];
+  strncpy(m.nick, nick, sizeof(m.nick) - 1);
+  m.nick[sizeof(m.nick) - 1] = 0;
+  return m;
 }
 
 void Pet::snapshotForParty() {
@@ -293,22 +317,7 @@ void Pet::snapshotForParty() {
   // what this depends on, so retire_test drives the real update() rather than
   // calling the two halves by hand.
   if (retireIsEarly()) return;
-  endedMon = PartyMon();
-  endedMon.dex = speciesId;
-  endedMon.level = level();
-  endedMon.medals = medals;
-  endedMon.ivAtk = ivAtk;
-  endedMon.ivDef = ivDef;
-  endedMon.ivSpe = ivSpe;
-  endedMon.ivHp = ivHp;
-  endedMon.trAtk = trAtk;
-  endedMon.trDef = trDef;
-  endedMon.trSpe = trSpe;
-  endedMon.trHp = trHp;
-  endedMon.shiny = shiny ? 1 : 0;
-  for (int i = 0; i < MOVE_SLOTS; i++) endedMon.moves[i] = moves[i];  // frozen too
-  strncpy(endedMon.nick, nick, sizeof(endedMon.nick) - 1);
-  endedMon.nick[sizeof(endedMon.nick) - 1] = 0;
+  endedMon = snapshot();
   endedKind = ceremony;
 }
 
