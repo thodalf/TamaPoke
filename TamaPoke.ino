@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "3.12"
+#define FW_VERSION "3.13"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -186,9 +186,13 @@ uint8_t sackGain = 0;
 bool sackNewHi = false;
 
 // training submenu (the 5th icon): routes to the trainer for each stat.
-// DEF has no minigame -- it rises on its own from good wellbeing -- so its row
-// is informational and does not respond to a tap.
 bool trainOpen = false;
+// Page 0: STRENGTH/SPEED/DEFENCE, the original three, geometry untouched.
+// Page 1: VITALITY, added later -- a 4th row does not fit this panel's own
+// circular bezel (same constraint the menu overlay hit), so it pages instead
+// of shrinking every row to squeeze one more in.
+uint8_t trainPage = 0;
+#define TRAIN_PAGES 2
 
 // move picker, opened from the MOVES card page. Most learnsets are level 0, so
 // a level-up "you learned a move" prompt would almost never fire -- the moveset
@@ -293,6 +297,17 @@ int16_t spdX = 0, spdY = 0;
 uint16_t spdHits = 0, spdMisses = 0;
 uint8_t spdGain = 0;
 bool spdNewHi = false;
+
+// berry-catch (trains VIT). The fourth training verb: the bag masher, the
+// ball juggler and the reaction test are all "hit a thing", so this one is
+// "don't let it get past you" -- a berry falls at a fixed X and has to be
+// tapped before it lands, which reads as catching rather than reacting.
+bool berryOpen = false;
+uint32_t berryUntil = 0, berryOverUntil = 0, berryBorn = 0;
+int16_t berryX = 0;
+uint16_t berryHits = 0, berryMisses = 0;
+uint8_t berryGain = 0;
+bool berryNewHi = false;
 
 bool gymOpen = false;
 bool gymHard = false;   // which ladder the list is showing
@@ -605,7 +620,8 @@ Btn buttons[BTN_COUNT] = {
 static const uint8_t CRACK1[][2] = { {15,8},{16,9},{15,10} };
 static const uint8_t CRACK2[][2] = { {11,13},{12,14},{11,15},{20,12},{19,13},{20,14} };
 // estrellas del modo noche
-static const uint16_t STARS[][2] = { {120,140},{330,120},{370,210},{95,230},{280,90},{160,95} };
+static const uint16_t STARS[][2] = { {120,140},{330,120},{370,210},{95,230},{280,90},{160,95},
+                                     {200,160},{55,110},{410,150},{240,60} };
 
 bool wasPressed = false;
 // eleccion de inicial (primera partida): Bulbasaur / Charmander / Squirtle, 3 filas
@@ -846,7 +862,7 @@ void loop() {
   // 85 ms en juego/saco: margen seguro para que el redibujado no pise el envio
   // DMA del frame anterior (a 40-65 ms solapaba y causaba flashes negros; con
   // sprites grandes el dibujo tarda mas, asi que se deja colchon)
-  if (now - lastRender >= (uint32_t)((gameOpen || sackOpen || spdOpen) ? 85 : 100)) {
+  if (now - lastRender >= (uint32_t)((gameOpen || sackOpen || spdOpen || berryOpen) ? 85 : 100)) {
     lastRender = now;
     render();
   }
@@ -913,21 +929,25 @@ void handleSerial() {
     pet.saveNow();
     Serial.printf("desc=%u\n", pet.careMistakes);
   } else if (line.startsWith("TR ")) {
-    // TR <atk> <def> <spe>: sets the TRAINING (this game's EVs), for testing a
-    // fully-raised creature without playing the minigames for an hour. Each is
-    // clamped to trMaxFor(iv), the same IV-bound ceiling the games enforce, so
-    // this cannot produce a creature the player could not have raised.
-    int v[3] = { 0, 0, 0 };
-    int n = sscanf(line.c_str() + 3, "%d %d %d", &v[0], &v[1], &v[2]);
+    // TR <atk> <def> <spe> [vit]: sets the TRAINING (this game's EVs), for
+    // testing a fully-raised creature without playing the minigames for an
+    // hour. Each is clamped to trMaxFor(iv), the same IV-bound ceiling the
+    // games enforce, so this cannot produce a creature the player could not
+    // have raised. vit is optional and falls back to the first value, same
+    // as IV's own 4th argument does.
+    int v[4] = { 0, 0, 0, 0 };
+    int n = sscanf(line.c_str() + 3, "%d %d %d %d", &v[0], &v[1], &v[2], &v[3]);
     if (n >= 1) {
       int a = v[0], d = (n >= 2) ? v[1] : v[0], e = (n >= 3) ? v[2] : v[0];
+      int h = (n >= 4) ? v[3] : v[0];
       pet.trAtk = (uint8_t)(a < 0 ? 0 : (a > pet.trMaxAtk() ? pet.trMaxAtk() : a));
       pet.trDef = (uint8_t)(d < 0 ? 0 : (d > pet.trMaxDef() ? pet.trMaxDef() : d));
       pet.trSpe = (uint8_t)(e < 0 ? 0 : (e > pet.trMaxSpe() ? pet.trMaxSpe() : e));
+      pet.trHp = (uint8_t)(h < 0 ? 0 : (h > pet.trMaxHp() ? pet.trMaxHp() : h));
       pet.saveNow();
     }
-    Serial.printf("tr=%u/%u/%u topes=%u/%u/%u\n", pet.trAtk, pet.trDef, pet.trSpe,
-                  pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
+    Serial.printf("tr=%u/%u/%u/%u topes=%u/%u/%u/%u\n", pet.trAtk, pet.trDef, pet.trSpe, pet.trHp,
+                  pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe(), pet.trMaxHp());
   } else if (line.startsWith("IV ")) {
     // IV <fue> <def> <vel> <vit>: fija los valores individuales (pruebas).
     // Con "IV 31 31 31 31" se ve el techo; con "IV 8 8 8 8" el suelo.
@@ -942,6 +962,7 @@ void handleSerial() {
       if (pet.trAtk > pet.trMaxAtk()) pet.trAtk = pet.trMaxAtk();
       if (pet.trDef > pet.trMaxDef()) pet.trDef = pet.trMaxDef();
       if (pet.trSpe > pet.trMaxSpe()) pet.trSpe = pet.trMaxSpe();
+      if (pet.trHp > pet.trMaxHp()) pet.trHp = pet.trMaxHp();
     }
     pet.saveNow();   // IV used to change RAM only and never write
     Serial.printf("iv=%u/%u/%u/%u topes=%u/%u/%u\n", pet.ivAtk, pet.ivDef,
@@ -1087,7 +1108,7 @@ void handleSerial() {
         m.dex = d;
         m.level = 50;
         m.ivAtk = m.ivDef = m.ivSpe = m.ivHp = 20;
-        m.trAtk = m.trDef = m.trSpe = 50;
+        m.trAtk = m.trDef = m.trSpe = m.trHp = 50;
         Serial.println(party.add(m) ? "added" : "party full");
       }
     }
@@ -1241,6 +1262,7 @@ void onSwipeV(int dir) {
   if (gameOpen) { leaveGame(); return; }
   if (sackOpen) { leaveSack(); return; }
   if (spdOpen) { leaveSpeed(); return; }
+  if (berryOpen) { leaveBerry(); return; }
   if (galleryOpen) {
     if (galleryDetail) { galleryDetail = 0; galleryPmd.unload(); galleryDirty = true; return; }
     galleryRegion = (uint8_t)((galleryRegion + (dir > 0 ? 1 : GAL_REGIONS - 1)) % GAL_REGIONS);
@@ -1599,7 +1621,11 @@ void onSwipe(int dir) {
     else playerPage = (uint8_t)p;
     return;
   }
-  if (trainOpen) { trainOpen = false; return; }
+  if (trainOpen) {   // horizontal pages between the 2 training pages
+    int p = (int)trainPage + (dir > 0 ? -1 : 1);
+    if (p >= 0 && p < TRAIN_PAGES) trainPage = (uint8_t)p;
+    return;
+  }
   if (movePickOpen) {   // the picker is paged; without this its later pages
     uint8_t all[64];    // were simply unreachable
     uint8_t n = learnableList(all, sizeof(all));
@@ -1624,6 +1650,7 @@ void onSwipe(int dir) {
   }
   if (gameOpen) { leaveGame(); return; }   // swipe out, keeping what you earned
   if (spdOpen) { leaveSpeed(); return; }
+  if (berryOpen) { leaveBerry(); return; }
   if (kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
@@ -1778,12 +1805,14 @@ void onTap(int16_t x, int16_t y) {
     bool inPanel = (x >= TRAIN_X && x <= TRAIN_X + TRAIN_W &&
                     y >= TRAIN_Y && y <= TRAIN_Y + TRAIN_H);
     if (!inPanel) { trainOpen = false; return; }   // tap outside = back to the pet
-    for (int i = 0; i < 3; i++) {   // all three train something now
+    int rows = (trainPage == 0) ? 3 : 1;   // page 1 only has VITALITY so far
+    for (int i = 0; i < rows; i++) {
       int ry = TRAIN_ROW_Y(i);
       if (x < TRAIN_X + 18 || x > TRAIN_X + TRAIN_W - 18) continue;
       if (y < ry || y > ry + TRAIN_ROW_H) continue;
       sfxPlay(SFX_TAP);
       trainOpen = false;
+      if (trainPage == 1) { startBerry(); return; }
       if (i == 0) startSack();
       else if (i == 1) startSpeedGame();
       else startGame();          // the ball game trains DEF
@@ -1905,6 +1934,10 @@ void onTap(int16_t x, int16_t y) {
     spdTap(x, y);
     return;
   }
+  if (berryOpen) {
+    berryTap(x, y);
+    return;
+  }
   if (gameOpen) {
     gameTap(x, y);
     return;
@@ -1979,7 +2012,7 @@ void onTap(int16_t x, int16_t y) {
       if (i == BTN_FOOD) feedMenuUntil = millis() + 6000;
       else if (i == BTN_LIGHT) pet.toggleLight();
       else if (i == BTN_BATH) startBath();
-      else trainOpen = true;
+      else { trainOpen = true; trainPage = 0; }
       return;
     }
   }
@@ -2033,12 +2066,25 @@ static const uint16_t BIOME_SOIL[6] = {
 };
 
 void drawClouds(uint32_t now, uint16_t col) {
-  for (int k = 0; k < 2; k++) {
-    int cx = (int)((now / 50 + k * 250) % 560) - 40;
-    int cy = 70 + k * 34;
-    gfx->fillCircle(cx, cy, 16, col);
-    gfx->fillCircle(cx + 18, cy + 3, 13, col);
-    gfx->fillCircle(cx - 15, cy + 4, 12, col);
+  for (int k = 0; k < 3; k++) {
+    int cx = (int)((now / 50 + k * 190) % 610) - 60;
+    int cy = 66 + k * 28;
+    int sc = (k == 2) ? 10 : 16;   // a third, smaller cloud sits further back
+    gfx->fillCircle(cx, cy, sc, col);
+    gfx->fillCircle(cx + sc + 2, cy + 3, sc - 3, col);
+    gfx->fillCircle(cx - sc + 1, cy + 4, sc - 4, col);
+  }
+}
+
+// dos aves lejanas cruzando el cielo, solo de dia -- una simple doble "V"
+static void drawBirds(uint32_t now, uint16_t col) {
+  for (int b = 0; b < 2; b++) {
+    int bx = (int)((now / 70 + b * 210) % 560) - 40;
+    int by = 46 + b * 22;
+    gfx->drawLine(bx, by, bx + 7, by - 5, col);
+    gfx->drawLine(bx + 7, by - 5, bx + 14, by, col);
+    gfx->drawLine(bx + 14, by, bx + 21, by - 5, col);
+    gfx->drawLine(bx + 21, by - 5, bx + 28, by, col);
   }
 }
 
@@ -2050,20 +2096,29 @@ void drawScene(uint8_t biome, uint32_t now, bool night) {
   else if (h < 18)      { top = C565(0x8f, 0xc8, 0xea); bot = C565(0xdc, 0xee, 0xe6); }  // dia
   else                  { top = C565(0xc7, 0x5a, 0x4a); bot = C565(0xf0, 0xae, 0x64); }  // atardecer
 
-  // cielo en bandas
-  for (int y = 0; y < HORIZON; y += 8)
-    gfx->fillRect(0, y, 466, 8, lerp565(top, bot, y, HORIZON));
+  // cielo en bandas -- 4px en vez de 8 para un degradado mas suave
+  for (int y = 0; y < HORIZON; y += 4)
+    gfx->fillRect(0, y, 466, 4, lerp565(top, bot, y, HORIZON));
 
-  // sol o luna
+  // sol o luna, con un halo suave detras para que no se vea un disco plano
   if (night) {
+    for (int r = 34; r >= 26; r -= 4)
+      gfx->drawCircle(360, 78, r, lerp565(bot, C565(0xe8, 0xee, 0xf5), 34 - r, 12));
     gfx->fillCircle(360, 78, 24, C565(0xe8, 0xee, 0xf5));
     gfx->fillCircle(370, 72, 22, lerp565(top, bot, 78, HORIZON));  // creciente
     for (auto &st : STARS) gfx->fillRect(st[0], st[1], 4, 4, UI_WHITE);
   } else if (h < 18) {
-    gfx->fillCircle(360, 84, 26, h < 8 ? C565(0xff, 0xd9, 0x8a) : C565(0xff, 0xe7, 0x9f));
+    uint16_t sunCol = h < 8 ? C565(0xff, 0xd9, 0x8a) : C565(0xff, 0xe7, 0x9f);
+    for (int r = 36; r >= 28; r -= 4)
+      gfx->drawCircle(360, 84, r, lerp565(top, sunCol, 36 - r, 12));
+    gfx->fillCircle(360, 84, 26, sunCol);
+    drawBirds(now, C565(0x3a, 0x3a, 0x46));
     drawClouds(now, C565(0xff, 0xff, 0xff));
   } else {
-    gfx->fillCircle(233, HORIZON - 6, 34, C565(0xff, 0xf1, 0xc8));  // sol poniente
+    uint16_t sunCol = C565(0xff, 0xf1, 0xc8);
+    for (int r = 40; r >= 36; r -= 4)
+      gfx->drawCircle(233, HORIZON - 6, r, lerp565(bot, sunCol, 40 - r, 8));
+    gfx->fillCircle(233, HORIZON - 6, 34, sunCol);  // sol poniente
   }
 
   // mar de la playa: una franja de agua sobre la arena
@@ -2082,35 +2137,62 @@ void drawScene(uint8_t biome, uint32_t now, bool night) {
 
   // suelo
   gfx->fillRect(0, HORIZON, 466, 466 - HORIZON, soil);
+
+  // loma lejana: una franja borrosa entre el cielo y la colina principal, para
+  // dar profundidad -- solo se ve el filo de arriba, la colina principal la
+  // tapa por debajo
+  uint16_t farHill = lerp565(soil, bot, 6, 16);
+  gfx->fillRoundRect(-60, HORIZON - 30, 586, 40, 20, farHill);
+
   uint16_t hill = lerp565(soil, night ? C565(0x0c, 0x12, 0x24) : C565(0xff, 0xff, 0xff), 3, 16);
   gfx->fillRoundRect(-60, HORIZON - 14, 586, 60, 30, hill);
 
   // detalles del bioma
   uint16_t dk = lerp565(soil, C565(0x10, 0x18, 0x20), night ? 11 : 7, 16);
-  if (biome == 2) {  // bosque: coniferas en silueta
+  if (biome == 2) {  // bosque: coniferas en silueta, con una fila mas tenue detras
+    uint16_t back = lerp565(dk, farHill, 5, 16);
+    for (int tx : { 30, 110, 200, 280, 390, 440 })
+      gfx->fillTriangle(tx, HORIZON - 34, tx - 10, HORIZON - 4, tx + 10, HORIZON - 4, back);
     for (int tx : { 60, 150, 360, 416 }) {
       gfx->fillTriangle(tx, HORIZON - 46, tx - 16, HORIZON, tx + 16, HORIZON, dk);
       gfx->fillTriangle(tx, HORIZON - 60, tx - 12, HORIZON - 28, tx + 12, HORIZON - 28, dk);
     }
-  } else if (biome == 3) {  // volcan: rocas y brasas
+  } else if (biome == 3) {  // volcan: rocas, brasas y humo que sube
     gfx->fillTriangle(70, HORIZON, 40, HORIZON + 30, 100, HORIZON + 30, dk);
     gfx->fillTriangle(400, HORIZON + 4, 372, HORIZON + 30, 430, HORIZON + 30, dk);
+    uint16_t smoke = lerp565(top, UI_WHITE, 1, 3);
+    for (int s = 0; s < 3; s++) {
+      int sy = (int)(HORIZON - 60 - (now / 30 + s * 90) % 140);
+      gfx->fillCircle(70 + (s - 1) * 6, sy, 7 - s, smoke);
+    }
     if (!night)
       for (int e = 0; e < 4; e++)
         gfx->fillRect(120 + e * 70, HORIZON + 8 + (e % 2) * 6, 4, 4, C565(0xff, 0x9b, 0x3a));
-  } else if (biome == 4) {  // montana: cumbres al fondo
+  } else if (biome == 4) {  // montana: cumbres al fondo, con nieve en la cima
     gfx->fillTriangle(140, HORIZON - 50, 60, HORIZON, 220, HORIZON, dk);
     gfx->fillTriangle(330, HORIZON - 38, 250, HORIZON, 410, HORIZON, dk);
-  } else if (biome == 5 && !night) {  // nieve: copos cayendo
-    for (int f = 0; f < 10; f++) {
-      int fx = (f * 53 + now / 40) % 466;
-      int fy = (f * 90 + now / 18) % HORIZON;
-      gfx->fillRect(fx, fy, 3, 3, UI_WHITE);
-    }
-  } else if (biome == 0) {  // pradera: matas de hierba
+    gfx->fillTriangle(140, HORIZON - 50, 128, HORIZON - 30, 152, HORIZON - 30, UI_WHITE);
+    gfx->fillTriangle(330, HORIZON - 38, 320, HORIZON - 22, 340, HORIZON - 22, UI_WHITE);
+  } else if (biome == 5) {  // nieve: escarcha en la loma, copos cayendo de dia
+    for (int c = 0; c < 6; c++)
+      gfx->fillRect(50 + c * 68, HORIZON - 16, 10, 3, UI_WHITE);
+    if (!night)
+      for (int f = 0; f < 10; f++) {
+        int fx = (f * 53 + now / 40) % 466;
+        int fy = (f * 90 + now / 18) % HORIZON;
+        gfx->fillRect(fx, fy, 3, 3, UI_WHITE);
+      }
+  } else if (biome == 0) {  // pradera: matas de hierba y florecillas
     for (int gx : { 80, 175, 300, 395 })
       for (int b = -1; b <= 1; b++)
         gfx->fillRect(gx + b * 5, HORIZON + 6, 2, 8 + (b == 0 ? 4 : 0), dk);
+    if (!night) {
+      gfx->fillCircle(130, HORIZON + 10, 2, C565(0xff, 0xd8, 0xe8));
+      gfx->fillCircle(340, HORIZON + 14, 2, C565(0xff, 0xf3, 0x8a));
+    }
+  } else if (biome == 1) {  // playa: guijarros sobre la arena
+    for (int px : { 40, 150, 260, 400 })
+      gfx->fillCircle(px, HORIZON + 16, 2, lerp565(soil, dk, 6, 16));
   }
 }
 
@@ -2171,7 +2253,7 @@ uint8_t uiCurrentScreen() {
   if (lanOpen) return SCR_LAN;
   if (gymOpen) return gymPick ? SCR_GYMPICK : SCR_GYM;
   if (pet.hasLearnOffer()) return SCR_LEARN;
-  if (gameOpen || sackOpen || spdOpen) return SCR_GAME;
+  if (gameOpen || sackOpen || spdOpen || berryOpen) return SCR_GAME;
   if (trainOpen) return SCR_TRAIN;
   if (menuOpen) return SCR_MENU;
   return SCR_MAIN;
@@ -2250,6 +2332,10 @@ void render() {
   }
   if (spdOpen) {
     renderSpeed();
+    return;
+  }
+  if (berryOpen) {
+    renderBerry();
     return;
   }
   if (trainOpen) {
@@ -2470,6 +2556,10 @@ void leaveSack() {
 void leaveSpeed() {
   if (!spdOverUntil) pet.trainSpeed(spdHits);
   spdOpen = false;
+}
+void leaveBerry() {
+  if (!berryOverUntil) pet.trainVitality(berryHits);
+  berryOpen = false;
 }
 
 void gameTap(int16_t x, int16_t y) {
@@ -3311,8 +3401,8 @@ static void btlNarrate(const Combatant &actor, const Combatant &target, const Tu
   if (lg.skipped) return;
   btlSfxFor(lg);
   if (lg.hurtSelf) { btlSay(T(S_BTL_HURTSELF)); return; }
-  if (lg.charged) { btlSay(T(S_BTL_USED), actor.name, MOVE_TBL[lg.move].name); return; }
-  if (lg.move) btlSay(T(S_BTL_USED), actor.name, MOVE_TBL[lg.move].name);
+  if (lg.charged) { btlSay(T(S_BTL_USED), actor.name, moveName(lg.move)); return; }
+  if (lg.move) btlSay(T(S_BTL_USED), actor.name, moveName(lg.move));
   if (lg.missed) { btlSay(T(S_BTL_MISS), actor.name); return; }
   if (lg.immune) { btlSay(T(S_BTL_IMMUNE)); return; }
   if (lg.crit) btlSay(T(S_BTL_CRIT));
@@ -3539,8 +3629,8 @@ static void btlApplyResult() {
   btlFoe.ailment = r.hostAil;
 
   btlMsgCount = 0;
-  if (r.hostMove) btlSay(T(S_BTL_USED), btlFoe.name, MOVE_TBL[r.hostMove].name);
-  if (r.guestMove) btlSay(T(S_BTL_USED), btlYou.name, MOVE_TBL[r.guestMove].name);
+  if (r.hostMove) btlSay(T(S_BTL_USED), btlFoe.name, moveName(r.hostMove));
+  if (r.guestMove) btlSay(T(S_BTL_USED), btlYou.name, moveName(r.guestMove));
   if (r.guestDmg) { btlHitUntil[0] = now + BTL_HIT_MS; sfxPlay(SFX_HIT); }
   if (r.hostDmg) { btlHitUntil[1] = now + BTL_HIT_MS; sfxPlay(SFX_HIT); }
   if (btlYou.fainted()) {
@@ -4010,7 +4100,7 @@ void renderBattle() {
       gfx->setTextColor(UI_INK);
       gfx->setTextSize(1);
       gfx->setCursor(x + 10, y + 12);
-      gfx->print(MOVE_TBL[mv].name);
+      gfx->print(moveName(mv));
       // Same chip as the move list: in a fight the type IS the decision, and
       // grey 6px text was the least visible thing on the busiest screen.
       int cw = drawTypeChip(x + 10, y + 26, MOVE_TBL[mv].type);
@@ -4165,7 +4255,11 @@ static void btlFinishCapture() {
 void renderCapture() {
   gfx->fillScreen(RGB565_BLACK);
   drawBattleBack();
-  gfx->fillRect(0, 254, 466, 212, UI_BG_DAY);
+  // Unlike renderBattle(), which flattens this band every frame because the
+  // menu/HP text is ALWAYS drawn into it, here there is only ever something
+  // to show in the final third (the result line) -- filling it for the
+  // throw/shake phases left a big blank near-white rectangle on screen for
+  // over a second with nothing on it.
   btlSide(82, 82, 300, 40, btlFoe, 1);
   btlSide(250, 190, 76, 168, btlYou, 0);
 
@@ -4559,6 +4653,129 @@ void renderSpeed() {
   gfx->print(b);
   // seconds left
   uint32_t left = (spdUntil > now) ? (spdUntil - now + 999) / 1000 : 0;
+  snprintf(b, sizeof(b), "%us", (unsigned)left);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(b) * 6, 76);
+  gfx->print(b);
+  gfx->flush();
+}
+
+// ---------- berry-catch (trains VIT) ----------
+// The fourth training verb. The bag is a masher, the ball a juggler and the
+// reaction test a whack-a-target -- this one falls at a fixed X and has to
+// be tapped before it lands, which reads as catching rather than reacting.
+#define BERRY_MS 15000UL       // session length
+#define BERRY_FALL0 1900       // first berry's fall duration, ms
+#define BERRY_FALL_MIN 750
+#define BERRY_R 20              // berry radius
+#define BERRY_Y0 70             // spawn height
+#define BERRY_Y1 372            // reaching this uncaught is a miss
+
+void berrySpawn() {
+  berryX = 150 + random(166);   // same safe X span respawnBall() already uses
+  berryBorn = millis();
+}
+
+void startBerry() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  berryOpen = true;
+  berryUntil = millis() + BERRY_MS;
+  berryOverUntil = 0;
+  berryHits = 0;
+  berryMisses = 0;
+  berryGain = 0;
+  berryNewHi = false;
+  berrySpawn();
+}
+
+static uint16_t berryFallMs() {
+  int fall = BERRY_FALL0 - berryHits * 45;   // falls faster as you catch more
+  return fall < BERRY_FALL_MIN ? BERRY_FALL_MIN : fall;
+}
+
+static int16_t berryYNow() {
+  uint32_t age = millis() - berryBorn;
+  uint16_t fall = berryFallMs();
+  if (age >= fall) return BERRY_Y1;
+  return BERRY_Y0 + (int16_t)((uint32_t)(BERRY_Y1 - BERRY_Y0) * age / fall);
+}
+
+void berryTap(int16_t x, int16_t y) {
+  if (berryOverUntil) return;
+  int16_t by = berryYNow();
+  int dx = x - berryX, dy = y - by;
+  if (dx * dx + dy * dy <= (BERRY_R + 16) * (BERRY_R + 16)) {
+    berryHits++;
+    sfxPlay(SFX_TAP);
+    berrySpawn();
+  }
+}
+
+void renderBerry() {
+  uint32_t now = millis();
+  drawGameScene();
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
+
+  if (berryOverUntil) {
+    if (now > berryOverUntil) { berryOpen = false; return; }
+    char b[24];
+    snprintf(b, sizeof(b), T(S_SCORE_FMT), berryHits);
+    gfx->setTextColor(ink);
+    gfx->setTextSize(4);
+    gfx->setCursor(CX - strlen(b) * 12, 150);
+    gfx->print(b);
+    char g[20];
+    snprintf(g, sizeof(g), T(S_VIT_GAIN_FMT), berryGain);
+    gfx->setTextColor(UI_BAR_OK);
+    gfx->setTextSize(3);
+    gfx->setCursor(CX - strlen(g) * 9, 210);
+    gfx->print(g);
+    gfx->setTextSize(2);
+    if (berryNewHi && berryHits > 0) {
+      gfx->setTextColor(UI_BAR_WARN);
+      gfx->setCursor(CX - strlen(T(S_NEW_RECORD)) * 6, 256);
+      gfx->print(T(S_NEW_RECORD));
+    } else {
+      char r[20];
+      snprintf(r, sizeof(r), T(S_RECORD_FMT), pet.vitHi);
+      gfx->setTextColor(ink);
+      gfx->setCursor(CX - strlen(r) * 6, 256);
+      gfx->print(r);
+    }
+    gfx->flush();
+    return;
+  }
+
+  // session over?
+  if (now >= berryUntil) {
+    berryNewHi = (berryHits > pet.vitHi);
+    berryGain = pet.trainVitality(berryHits);
+    sfxPlay(berryNewHi ? SFX_MEDAL : SFX_PLAY);
+    berryOverUntil = now + 3500;
+    gfx->flush();
+    return;
+  }
+  // hit the ground uncaught?
+  if (now - berryBorn >= berryFallMs()) {
+    berryMisses++;
+    berrySpawn();
+  }
+
+  // a round body, a highlight and a small leaf -- simple enough to read at speed
+  int16_t by = berryYNow();
+  gfx->fillCircle(berryX, by, BERRY_R, C565(0xd6, 0x3a, 0x3a));
+  gfx->fillCircle(berryX - 6, by - 6, 5, C565(0xf0, 0x8a, 0x8a));
+  gfx->fillTriangle(berryX, by - BERRY_R, berryX - 8, by - BERRY_R - 10,
+                    berryX + 4, by - BERRY_R - 6, C565(0x3a, 0x8a, 0x3a));
+
+  char b[12];
+  snprintf(b, sizeof(b), "%u", berryHits);
+  gfx->setTextColor(ink);
+  gfx->setTextSize(4);
+  gfx->setCursor(CX - strlen(b) * 12, 30);
+  gfx->print(b);
+  uint32_t left = (berryUntil > now) ? (berryUntil - now + 999) / 1000 : 0;
   snprintf(b, sizeof(b), "%us", (unsigned)left);
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(b) * 6, 76);
@@ -5210,8 +5427,8 @@ void renderLearn() {
   gfx->print(head);
   gfx->setTextColor(DEX_TBL[pet.speciesId].accent);
   gfx->setTextSize(3);
-  gfx->setCursor(CX - (int)strlen(MOVE_TBL[mv].name) * 9, 66);
-  gfx->print(MOVE_TBL[mv].name);
+  gfx->setCursor(CX - (int)strlen(moveName(mv)) * 9, 66);
+  gfx->print(moveName(mv));
 
   for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(LEARN_ROW_Y(i), pet.moves[i], false, pet.speciesId);
 
@@ -5426,11 +5643,22 @@ void renderTrain() {
   gfx->setCursor(CX - (int)strlen(T(S_TRAIN)) * 6, TRAIN_Y + 20);
   gfx->print(T(S_TRAIN));
 
+  // page dots, same idiom as drawMenu()'s
+  for (int i = 0; i < TRAIN_PAGES; i++) {
+    int dx = CX - (TRAIN_PAGES - 1) * 7 + i * 14;
+    if (i == trainPage) gfx->fillCircle(dx, TRAIN_Y + 40, 3, UI_INK);
+    else gfx->drawCircle(dx, TRAIN_Y + 40, 2, UI_INK);
+  }
+
+  int rows = (trainPage == 0) ? 3 : 1;
   const char *lbl[3] = { T(S_TR_ATK), T(S_TR_SPE), T(S_TR_DEF) };
   uint8_t cur[3] = { pet.trAtk, pet.trSpe, pet.trDef };
   uint8_t cap[3] = { pet.trMaxAtk(), pet.trMaxSpe(), pet.trMaxDef() };
+  if (trainPage == 1) {
+    lbl[0] = T(S_TR_VIT); cur[0] = pet.trHp; cap[0] = pet.trMaxHp();
+  }
 
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < rows; i++) {
     int y = TRAIN_ROW_Y(i);
     bool passive = false;      // every row opens a game now, DEF included
     gfx->fillRoundRect(TRAIN_X + 18, y, TRAIN_W - 36, TRAIN_ROW_H, 12,
@@ -5451,8 +5679,9 @@ void renderTrain() {
 
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(1);
-  gfx->setCursor(CX - (int)strlen(T(S_TR_DEF_HINT)) * 3, TRAIN_Y + TRAIN_H - 22);
-  gfx->print(T(S_TR_DEF_HINT));
+  const char *hint = (trainPage == 0) ? T(S_TR_DEF_HINT) : T(S_TR_VIT_HINT);
+  gfx->setCursor(CX - (int)strlen(hint) * 3, TRAIN_Y + TRAIN_H - 22);
+  gfx->print(hint);
   gfx->flush();   // without this the panel never updates and the screen freezes
 }
 

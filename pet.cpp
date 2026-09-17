@@ -304,6 +304,7 @@ void Pet::snapshotForParty() {
   endedMon.trAtk = trAtk;
   endedMon.trDef = trDef;
   endedMon.trSpe = trSpe;
+  endedMon.trHp = trHp;
   endedMon.shiny = shiny ? 1 : 0;
   for (int i = 0; i < MOVE_SLOTS; i++) endedMon.moves[i] = moves[i];  // frozen too
   strncpy(endedMon.nick, nick, sizeof(endedMon.nick) - 1);
@@ -593,10 +594,14 @@ uint16_t Pet::defStat() const {
 uint16_t Pet::speStat() const {
   return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpe, ivSpe, level(), trSpe);
 }
-// la vitalidad no se entrena (no hay nada que la suba), asi que lleva un +10
-// fijo en lugar del entrenamiento, igual que el +Nivel+10 del HP en los juegos
+// Used to carry a flat +10 here instead of a training term -- a nod to the
+// real games' +Level+10 HP formula, back when nothing actually trained
+// vitality. Now that the berry-catch game does, it works exactly like the
+// other three: 0 until trained, capped by trMaxHp() same as trMaxFor()
+// caps the rest. A freshly hatched creature's VIT is a little lower than it
+// used to be as a result -- see README's balance table.
 uint16_t Pet::vitStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bHp, ivHp, level(), 10);
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bHp, ivHp, level(), trHp);
 }
 // Special reuses the physical IV and training against the species' special base
 // stat, which is what keeps Alakazam (50 Atk / 135 SpA) a real attacker without
@@ -939,7 +944,7 @@ void Pet::hatch() {
   // IV del individuo (cada crianza es unica). Se tiran ANTES de resetear el
   // vinculo a proposito: el careBonus que los empuja es el del bicho anterior.
   rollIVs();
-  trAtk = trDef = trSpe = 0;
+  trAtk = trDef = trSpe = trHp = 0;
   goodTicks = 0;
   berryKnown = false;
   bond = 0;          // vinculo, medallas y nombre son del individuo
@@ -1138,6 +1143,32 @@ uint8_t Pet::trainStrength(uint16_t hits) {
   return gain;
 }
 
+// The berry-catch game: VIT's own trainer, same shape as the bag and the
+// reaction test.
+uint8_t Pet::trainVitality(uint16_t hits) {
+  if (ceremony != CER_NONE || isEgg()) return 0;
+  uint8_t gain = hits / 3;          // ~3 catches = 1 point of training
+  if (gain > 18) gain = 18;         // same per-session ceiling as the others
+  uint8_t before = trHp;
+  uint8_t v = trHp + gain;
+  trHp = v > trMaxHp() ? trMaxHp() : v;   // el IV pone el techo
+  gain = trHp - before;
+  energy = dropTo(energy, 10, 5);
+  fullness = dropTo(fullness, 5, 5);
+  int burn = (int)weight - hits / 3;
+  weight = burn > 0 ? burn : 0;
+  joy = clamp100(joy + 5);
+  if (hits > vitHi) vitHi = hits;   // record de capturas
+  // Training bonds, and it scales with the session: a token effort is worth the
+  // base, a full one is worth more. The daily cap in addBond() still stops it
+  // being farmed -- this changes how fast a good session gets there, not the
+  // ceiling.
+  addBond((uint8_t)(2 + gain / 6));
+  registerCare();
+  save();
+  return gain;
+}
+
 void Pet::play() {
   if (ceremony != CER_NONE) return;
   if (isEgg() || sleeping) return;
@@ -1264,6 +1295,7 @@ void Pet::save() {
   prefs.putUChar("tatk", trAtk);
   prefs.putUChar("tdef", trDef);
   prefs.putUChar("tspe", trSpe);
+  prefs.putUChar("thp", trHp);
   prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putUChar("mvlv", lastLearnLevel);
   prefs.putUChar("avtr", avatar);
@@ -1302,6 +1334,7 @@ void Pet::save() {
   prefs.putUShort("ghi", gameHi);
   prefs.putUShort("shi", strHi);
   prefs.putUShort("qhi", spdHi);
+  prefs.putUShort("vhi", vitHi);
   prefs.putString("nick", nick);
 }
 
@@ -1329,10 +1362,15 @@ void Pet::load() {
   trAtk = prefs.getUChar("tatk", 0);
   trDef = prefs.getUChar("tdef", 0);
   trSpe = prefs.getUChar("tspe", 0);
+  // Absent key -> 0 on a save from before the berry-catch game existed, same
+  // as any other additive field -- it just means the vitality bonus starts
+  // where the other three always did rather than pre-filled.
+  trHp = prefs.getUChar("thp", 0);
   // un guardado antiguo puede traer entrenamiento por encima del nuevo tope
   if (trAtk > trMaxAtk()) trAtk = trMaxAtk();
   if (trDef > trMaxDef()) trDef = trMaxDef();
   if (trSpe > trMaxSpe()) trSpe = trMaxSpe();
+  if (trHp > trMaxHp()) trHp = trMaxHp();
   berryKnown = prefs.getBool("bk", false);
   shiny = prefs.getBool("shy", false);
   eggShiny = prefs.getBool("eshy", false);
@@ -1368,6 +1406,7 @@ void Pet::load() {
   gameHi = prefs.getUShort("ghi", 0);
   strHi = prefs.getUShort("shi", 0);
   spdHi = prefs.getUShort("qhi", 0);
+  vitHi = prefs.getUShort("vhi", 0);
   prefs.getString("nick", nick, sizeof(nick));
   // Moves load last: relearnFromLevel() needs speciesId and ageMinutes, both of
   // which are read above. A save from before moves existed has no "mvs" key and

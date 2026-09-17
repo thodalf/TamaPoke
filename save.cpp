@@ -16,7 +16,7 @@ const SaveField SAVE_FIELDS[] = {
   // individual values and training
   { "ivat", SK_U8 },    { "ivdf", SK_U8 },    { "ivsp", SK_U8 },
   { "ivhp", SK_U8 },    { "tatk", SK_U8 },    { "tdef", SK_U8 },
-  { "tspe", SK_U8 },
+  { "tspe", SK_U8 },    { "thp", SK_U8 },
   // moves
   { "mvs", SK_BYTES },  { "mvlv", SK_U8 },
   // flags
@@ -29,7 +29,7 @@ const SaveField SAVE_FIELDS[] = {
   { "badh", SK_U16 },   { "dexreg", SK_BYTES }, { "dexsh", SK_BYTES },
   { "strk", SK_U16 },   { "bstrk", SK_U16 },  { "cday", SK_U32 },
   { "medal", SK_U16 },  { "tmedal", SK_U16 }, { "mstone", SK_U16 },
-  { "ghi", SK_U16 },    { "shi", SK_U16 },    { "qhi", SK_U16 },
+  { "ghi", SK_U16 },    { "shi", SK_U16 },    { "qhi", SK_U16 },   { "vhi", SK_U16 },
   // the banked creatures
   { "party", SK_BYTES }, { "box", SK_BYTES },
   // settings, so a restored device plays the way it did

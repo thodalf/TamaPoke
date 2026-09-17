@@ -67,9 +67,9 @@ enum StrId : uint8_t {
   S_STATS,          // menu row: jump straight to the stats card page
   S_TRAIN,          // training submenu title
   S_TR_ATK,         // row: train strength (the punching bag)
-  S_TR_SPE,         // row: train speed (the ball game)
-  S_TR_DEF,         // row: defence -- passive, shown for information only
-  S_TR_DEF_HINT,    // why the defence row does nothing when tapped
+  S_TR_SPE,         // row: train speed (its own reaction test)
+  S_TR_DEF,         // row: train defence (the ball game, repurposed from speed)
+  S_TR_DEF_HINT,    // hint under the DEF row: which minigame trains it
   // moves card page + the move picker behind it
   S_MOVES,          // card page title
   S_MOVE_EMPTY,     // an unused move slot
@@ -135,11 +135,16 @@ enum StrId : uint8_t {
   S_BTL_CAPTURE,    // battle menu: throw a pokeball
   S_BTL_CAUGHT_FMT, // "Gotcha! %s was caught!"
   S_BTL_BROKE_FREE_FMT,  // "%s broke free!"
+  // berry-catch (trains VIT), the training submenu's 4th row
+  S_TR_VIT,         // row: train vitality (the berry-catch game)
+  S_TR_VIT_HINT,    // hint under the VIT row on the training submenu's 2nd page
+  S_VIT_GAIN_FMT,   // "VIT +%u" after the berry-catch game
   STR_COUNT
 };
 
 const char *T(StrId id);       // texto en el idioma activo
 const char *dexName(int dex);  // nombre de especie en el idioma activo
+const char *moveName(int mv);  // nombre de movimiento en el idioma activo
 const char *medalName(int i);  // banner de medalla (MED_COUNT)
 const char *medalLabel(int i); // etiqueta corta de medalla
 const char *medalDesc(int i);  // descripcion larga de medalla

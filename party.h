@@ -32,6 +32,12 @@ struct PartyMon {
   // Appended at the END of the struct on purpose -- Party::begin() migrates
   // older, shorter blobs by length, and that only works if nothing moved.
   uint8_t moves[MOVE_SLOTS] = { 0, 0, 0, 0 };
+  // trHp joins trAtk/trDef/trSpe above in spirit, but has to live down HERE:
+  // it is newer than moves[], and Party::begin()'s length-based migration
+  // copies an old (shorter) record straight into the FRONT of this struct,
+  // so anything added after this project's last expansion has to stay
+  // physically last too, or every existing banked creature's bytes shift.
+  uint8_t trHp = 0;
 
   bool empty() const { return dex < 1; }
 };
