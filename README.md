@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v3.14-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v3.15-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -233,7 +233,10 @@ brings ELECTIVIRE, MAGMORTAR and RHYPERIOR waiting on exactly the same thing.
   it trades places with your current one on the spot, no ceremony, no egg. The
   incoming creature keeps going exactly like the one it replaced — it can still
   evolve, farewell, retire or run away from here — and the one it replaced is
-  banked in its place, so nothing is lost either way.
+  banked in its place, so nothing is lost either way. **FOOD/JOY/ENE/HYG,
+  weight, poops and the neglect clock travel WITH each creature** rather than
+  resetting on the swap — a starving, neglect-clocked pet comes back exactly
+  as starving as it left, so switching is never a free refill.
 - *(Gym battles, which is what the party is for: on the roadmap.)*
 
 ### The three endings (you choose & witness each — none auto-fire)

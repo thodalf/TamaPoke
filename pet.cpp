@@ -252,7 +252,6 @@ void Pet::tick() {
 void Pet::adoptFrom(const PartyMon &m, bool stayFrozen) {
   if (m.empty()) return;
   ceremony = CER_NONE;
-  neglectTicks = 0;
   speciesId = m.dex;
   prevSpeciesId = -1;
   eggTaps = 0;
@@ -266,16 +265,19 @@ void Pet::adoptFrom(const PartyMon &m, bool stayFrozen) {
   lastLearnLevel = level();     // do not replay every gate it already passed
   learnQCount = 0;
   medals = m.medals;
-  careMistakes = 0;
-  mistakeCooldown = 0;
   sleeping = false;
   bond = 0;
   bondToday = 0;
   berryKnown = false;
-  weight = 0;
-  fullness = joy = energy = 80;
-  hygiene = 100;
-  poops = 0;
+  // Restored, NOT reset. This creature's actual condition when it was banked
+  // -- a starving, neglect-clocked creature stays starving and neglect-clocked
+  // after a swap, rather than a free refill and a free clean slate a player
+  // could farm by swapping back and forth instead of caring for anything.
+  fullness = m.fullness; joy = m.joy; energy = m.energy; hygiene = m.hygiene;
+  weight = m.weight; poops = m.poops;
+  neglectTicks = m.neglectTicks;
+  careMistakes = m.careMistakes;
+  mistakeCooldown = m.mistakeCooldown;
   frozen = stayFrozen;
   strncpy(nick, m.nick, sizeof(nick) - 1);
   nick[sizeof(nick) - 1] = 0;
@@ -303,6 +305,11 @@ PartyMon Pet::snapshot() const {
   for (int i = 0; i < MOVE_SLOTS; i++) m.moves[i] = moves[i];
   strncpy(m.nick, nick, sizeof(m.nick) - 1);
   m.nick[sizeof(m.nick) - 1] = 0;
+  m.fullness = fullness; m.joy = joy; m.energy = energy; m.hygiene = hygiene;
+  m.weight = weight; m.poops = poops;
+  m.neglectTicks = neglectTicks;
+  m.careMistakes = careMistakes;
+  m.mistakeCooldown = mistakeCooldown;
   return m;
 }
 

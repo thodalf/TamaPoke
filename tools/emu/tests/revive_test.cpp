@@ -79,6 +79,26 @@ int main(){
   for (int i=0;i<10;i++){ g_ms += 60000; r.update(g_ms); }
   ck(r.ageMinutes > age0, "and keeps ageing afterward");
 
+  // THE EXPLOIT this all exists to close: a starving, neglect-clocked
+  // creature swapped out and back must come back exactly as it left, not
+  // refilled. Before adoptFrom() restored these fields instead of hardcoding
+  // fresh ones, two taps (swap away, swap back) was a free full refill of
+  // every care stat AND a free reset of the runaway clock.
+  r.dbgRunawayReady();      // fullness=joy=energy=hygiene=0, neglectTicks armed
+  r.weight = 40; r.poops = 3; r.careMistakes = 4;
+  PartyMon starving = r.snapshot();
+  ck(starving.fullness==0 && starving.hygiene==0 && starving.neglectTicks>0,
+     "snapshot() captures the real care state, not a fresh one");
+
+  PartyMon fresh; fresh.dex=1; fresh.level=10;
+  fresh.ivAtk=fresh.ivDef=fresh.ivSpe=fresh.ivHp=15;
+  r.swapActive(fresh);   // swap away to something else first
+  r.swapActive(starving);   // ...then swap the starving one back in
+  ck(r.fullness==0 && r.joy==0 && r.energy==0 && r.hygiene==0 &&
+     r.weight==40 && r.poops==3, "a round-trip swap does NOT refill care stats");
+  ck(r.careMistakes==4 && r.canRunawayNow(),
+     "...nor reset the slip-up count or the runaway clock");
+
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
 }
