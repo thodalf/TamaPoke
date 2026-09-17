@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "3.13"
+#define FW_VERSION "3.15"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1325,13 +1325,19 @@ void renderMonSheet(const PartyMon &m, bool fromBox) {
   gfx->setCursor(CX - (int)strlen(st) * 3, 300);
   gfx->print(st);
 
-  // Bringing one back is only offered while an egg is waiting. Otherwise it
-  // would silently destroy whatever creature is currently alive, and a rule the
-  // player cannot see is worse than a button they cannot press. A box creature
-  // goes to the party instead, which is always allowed if there is room.
-  bool leftOk = fromBox ? (party.firstFree() >= 0)
-                        : (pet.isEgg() && !pet.awaitingStarter());
-  const char *leftLbl = fromBox ? T(S_BOX_TAKE) : T(S_REVIVE);
+  // The left button does one of three things: hand a box creature to the
+  // party (fromBox), bring a companion back while an egg waits (isEgg, the
+  // original REVIVE -- frozen, see pet.h), or -- new -- swap the live pet
+  // for this one outright while there IS a live pet. That third case is not
+  // a companion: the incoming creature keeps ageing and can still evolve,
+  // farewell, retire or run away from here on, exactly like the one it
+  // replaces would have. Mid ceremony (the outgoing creature is already
+  // leaving) is the one time none of the three apply.
+  bool eggWaiting = pet.isEgg() && !pet.awaitingStarter();
+  bool canSwapActive = !pet.isEgg() && pet.ceremony == CER_NONE;
+  bool leftOk = fromBox ? (party.firstFree() >= 0) : (eggWaiting || canSwapActive);
+  const char *leftLbl = fromBox ? T(S_BOX_TAKE)
+                       : (pet.isEgg() ? T(S_REVIVE) : T(S_MAKE_ACTIVE));
   gfx->fillRoundRect(PDET_L_X, PDET_BTN_Y, PDET_L_W, PDET_BTN_H, 10,
                      leftOk ? UI_BAR_OK : UI_TRACK);
   gfx->drawRoundRect(PDET_L_X, PDET_BTN_Y, PDET_L_W, PDET_BTN_H, 10, UI_INK);
@@ -1359,7 +1365,8 @@ void renderMonSheet(const PartyMon &m, bool fromBox) {
   // Above the button there is clear space between it and the stat line, and
   // that is also where the eye is already travelling.
   if (!leftOk) {
-    const char *why = fromBox ? T(S_PARTY_FULL) : T(S_REVIVE_EGG);
+    const char *why = fromBox ? T(S_PARTY_FULL)
+                     : (pet.isEgg() ? T(S_REVIVE_EGG) : T(S_MAKE_ACTIVE_HINT));
     gfx->setTextColor(UI_BAR_WARN);
     gfx->setTextSize(1);
     gfx->setCursor(CX - (int)strlen(why) * 3, PDET_BTN_Y - 14);
@@ -1503,10 +1510,20 @@ void partyTap(int16_t x, int16_t y) {
     // The confirm is modal: while it is up nothing else on the sheet responds,
     // or a miss on YES would fall through to the move rows underneath it.
     if (releaseConfirm) { monSheetConfirmTap(x, y, false); return; }
-    if (monSheetBtn(x, y, true)) {           // BRING BACK
-      if (!pet.isEgg() || pet.awaitingStarter()) { sfxPlay(SFX_DENY); return; }
-      pet.reviveFrom(party.slots[partyDetail - 1]);
-      party.releaseAt(partyDetail - 1);      // it is alive now, not banked
+    if (monSheetBtn(x, y, true)) {           // BRING BACK (egg) or SWITCH (live)
+      if (pet.isEgg()) {
+        if (pet.awaitingStarter()) { sfxPlay(SFX_DENY); return; }
+        pet.reviveFrom(party.slots[partyDetail - 1]);
+        party.releaseAt(partyDetail - 1);      // it is alive now, not banked
+      } else {
+        if (pet.ceremony != CER_NONE) { sfxPlay(SFX_DENY); return; }
+        // The outgoing creature is banked into the SAME slot the incoming
+        // one just vacated -- a straight swap, not a release-then-add, so
+        // the party's size and the rest of its order never move.
+        PartyMon outgoing = pet.snapshot();
+        pet.swapActive(party.slots[partyDetail - 1]);
+        party.replaceAt(partyDetail - 1, outgoing);
+      }
       partyDetail = 0;
       boxSwapFrom = 0;
       partyOpen = false;
@@ -4285,9 +4302,17 @@ void renderCapture() {
         gfx->drawCircle(bx, by, 16 + r, r % 12 ? 0xFEA0 : 0xFF60);
     }
   }
-  // a plain pokeball: red top, white bottom, black band, white button
-  gfx->fillCircle(bx, by, 16, 0xF800);
-  gfx->fillRect(bx - 16, by, 32, 16, UI_WHITE);
+  // a plain pokeball: white body, red top half. The white half used to be a
+  // flat fillRect, whose square corners poked out past the circle's actual
+  // curve -- a visible white patch sitting outside the ball's round outline
+  // for the whole throw. Filling the base circle white first and then adding
+  // red only where the circle's own curvature actually is (scanline, per row)
+  // keeps both halves inside the same silhouette.
+  gfx->fillCircle(bx, by, 16, UI_WHITE);
+  for (int dy = -16; dy < 0; dy++) {
+    int hw = (int)sqrtf((float)(16 * 16 - dy * dy));
+    gfx->fillRect(bx - hw, by + dy, hw * 2, 1, 0xF800);
+  }
   gfx->fillRect(bx - 16, by - 2, 32, 4, UI_INK);
   gfx->drawCircle(bx, by, 16, UI_INK);
   gfx->fillCircle(bx, by, 5, UI_WHITE);

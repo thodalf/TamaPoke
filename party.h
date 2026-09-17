@@ -38,6 +38,18 @@ struct PartyMon {
   // so anything added after this project's last expansion has to stay
   // physically last too, or every existing banked creature's bytes shift.
   uint8_t trHp = 0;
+  // Care state at the moment this creature was banked. WITHOUT this, swapping
+  // the live pet for a party member (Pet::swapActive) would have nothing real
+  // to restore and would quietly refill food/energy/joy/hygiene back to a
+  // fresh baseline every time -- a free reset a player could exploit by
+  // swapping back and forth instead of actually caring for anything. Same
+  // append-only reasoning as trHp above: this has to stay physically last.
+  uint8_t fullness = 80, joy = 80, energy = 80, hygiene = 100, weight = 0, poops = 0;
+  // Same exploit reasoning for the neglect clock and the slip-up count: without
+  // these, swapping a neglected creature out and back would quietly restart its
+  // hour-of-total-neglect timer for free, delaying a runaway it had otherwise
+  // earned.
+  uint8_t neglectTicks = 0, careMistakes = 0, mistakeCooldown = 0;
 
   bool empty() const { return dex < 1; }
 };
