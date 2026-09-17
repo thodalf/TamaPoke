@@ -18,6 +18,7 @@ String FakeSerial::readStringUntil(char) { return String(""); }
 void sfxPlay(uint8_t) {}
 #include "i18n.h"
 #include "dex.h"
+#include "moves.h"
 #include <cstdio>
 #include <cstring>
 
@@ -52,5 +53,22 @@ int main() {
   printf("%s: dexName never null across %d languages x dex 0-%d\n",
          dbad ? "FAIL" : "PASS", LANG_COUNT, DEX_COUNT);
   bad += dbad;
+
+  // Same shape as DEX_NAMES: MOVE_NAMES only has a FR row (moves.h), so this
+  // checks moveName() never hands a null AND that the FR translations are
+  // themselves ASCII-only, same rule as STRINGS above.
+  int mbad = 0;
+  for (int l = 0; l < LANG_COUNT; l++) {
+    setLang((Lang)l);
+    for (int m = 0; m < MOVE_COUNT; m++) {
+      const char *v = moveName(m);
+      if (!v) { printf("NULL  moveName %s move %d\n", LANG[l], m); mbad++; continue; }
+      for (const unsigned char *p = (const unsigned char *)v; *p; p++)
+        if (*p > 0x7F) { printf("NON-ASCII  moveName %s move %d: \"%s\"\n", LANG[l], m, v); mbad++; break; }
+    }
+  }
+  printf("%s: moveName never null and ASCII-only across %d languages x %d moves\n",
+         mbad ? "FAIL" : "PASS", LANG_COUNT, MOVE_COUNT);
+  bad += mbad;
   return bad ? 1 : 0;
 }

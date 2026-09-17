@@ -2191,3 +2191,44 @@ static inline uint8_t learnLevel(int16_t dex, uint8_t i) {
   if (i >= learnCount(dex)) return 0;
   return LEARN_TBL[LEARN_OFS[dex] + i].level;
 }
+
+// Hand-written, NOT part of gen_moves.py's output -- same arrangement as
+// DEX_NAMES in dex.h (also hand-written, also appended after the generated
+// table). Only the FR row is filled in; every other row is left as {}, which
+// value-initializes every entry to nullptr, so moveName() below falls back
+// to MOVE_TBL[i].name exactly the way dexName() already does for the dex
+// entries DEX_NAMES never covers. If gen_moves.py is ever re-run in a way
+// that rewrites this whole file, this block has to be re-appended by hand --
+// there is nothing in the generator that knows about it.
+// DEX_LANG_COUNT (from dex.h, already included) rather than LANG_COUNT from
+// i18n.h -- moves.h has no reason to newly depend on i18n.h, and the two
+// counts are the same six languages by construction.
+static const char *const MOVE_NAMES[DEX_LANG_COUNT][MOVE_COUNT] = {
+  {},  // ES
+  {},  // EN -- MOVE_TBL's own name already is the English name
+  // FR, verified against Bulbapedia's "List of moves in other languages"
+  // move by move rather than guessed, and stripped of accents the bitmap
+  // font has no glyphs for (e.g. "Flammeche" not "Flammèche").
+  {
+    "-", "CHARGE", "GRIFFE", "ECRAS'FACE", "FURIE", "VIVE-ATTAQUE", "METEORES",
+    "PLAQUAGE", "DAMOCLES", "ULTRALASER", "PICPIC", "FLAMMECHE", "POING FEU",
+    "LANCE-FLAMMES", "DEFLAGRATION", "ECUME", "PISTOLET A O", "CASCADE", "SURF",
+    "HYDROCANON", "ETINCELLE", "ECLAIR", "POING ECLAIR", "TONNERRE",
+    "FATAL-FOUDRE", "VOLE-VIE", "FOUET LIANES", "TRANCH'HERBE", "MEGA-SANGSUE",
+    "LANCE-SOLEIL", "ONDE BOREALE", "POING GLACE", "LASER GLACE", "BLIZZARD",
+    "POING KARATE", "FRAPPE ATLAS", "SACRIFICE", "PIED VOLTIGE", "DARD-VENIN",
+    "ACIDE", "DETRITUS", "BOMBE BEURK", "MASSD'OS", "TUNNEL", "SEISME",
+    "CRU-AILES", "BEC VRILLE", "VOL", "VAGUE PSY", "CHOC MENTAL", "RAFALE PSY",
+    "PSYKO", "PIQURE", "DARD-NUEE", "VAMPIRISME", "MEGACORNE", "BOURDON",
+    "PLAIE CROIX", "ECLATE-ROC", "JET-PIERRES", "EBOULEMENT", "POUVOIR ANTIQUE",
+    "LECHOUILLE", "OMBRE NOCTURNE", "BALL'OMBRE", "DRACO-RAGE", "DRACO-GRIFFE",
+    "COLERE", "MORSURE", "MACHOUILLE", "TETE DE FER", "LUMINOCANON",
+    "ECLAT MAGIQUE", "CALINERIE", "POUVOIR LUNAIRE", "DANSE LAMES", "HATE",
+    "BOUCLIER", "AMNESIE", "MACHINATION", "DANSE DRACO", "GONFLETTE",
+    "RUGISSEMENT", "GROZ'YEUX", "GRINCEMENT", "SECRETION", "SOIN", "E-COQUE",
+    "LUTTE", "VIBROBSCUR",
+  },
+  {},  // DE
+  {},  // IT
+  {},  // PT
+};

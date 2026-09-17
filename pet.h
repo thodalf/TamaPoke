@@ -97,7 +97,7 @@ public:
   // stat Y ademas fijan el tope de entrenamiento (trMaxFor): un individuo
   // mediocre no solo empieza peor, es que no puede llegar tan lejos.
   uint8_t ivAtk = 16, ivDef = 16, ivSpe = 16, ivHp = 16;
-  uint8_t trAtk = 0, trDef = 0, trSpe = 0;
+  uint8_t trAtk = 0, trDef = 0, trSpe = 0, trHp = 0;
   bool berryKnown = false;  // ya descubrio su baya favorita
   bool shiny = false;       // variante de color rara (se sortea en el huevo)
   uint32_t ageMinutes = 0;
@@ -146,9 +146,14 @@ public:
   // The ball game: happiness AND defence training. Returns the DEF gained.
   uint8_t playResult(uint8_t score);
   uint8_t trainStrength(uint16_t hits);  // saco de entrenamiento (entrena FUE)
-  // Reaction test: its own trainer, so the ball game can go back to being purely
-  // about joy instead of doubling as a stat grind.
+  // Its own trainer, so SPEED did not have to keep sharing the ball game --
+  // which was freed up and now trains DEF instead, not left purely idle.
   uint8_t trainSpeed(uint16_t hits);
+  // The berry-catch game: VIT's own trainer. Until this existed, vitStat()
+  // baked in a flat +10 in place of a real training term -- everyone's
+  // vitality quietly started ahead of the other three stats, which had to
+  // be earned from zero. See CLAUDE.md/README for the balance note.
+  uint8_t trainVitality(uint16_t hits);
   // What beating a gym leader is worth. Random WHICH stat, but only among the
   // ones with room left -- a random grant that landed on an already-capped stat
   // would silently evaporate, which reads as a bug rather than as luck. Writes
@@ -157,6 +162,7 @@ public:
   // already spent the energy, and that is what rate-limits rematching.
   uint8_t rewardTraining(uint8_t amount, uint8_t &which);
   uint16_t spdHi = 0;    // best reaction-test score
+  uint16_t vitHi = 0;    // best berry-catch score
 
   // stats de combate: base real de gen 1 + nivel + IV + entrenamiento
   uint16_t atkStat() const;
@@ -282,6 +288,7 @@ public:
   uint8_t trMaxAtk() const { return trMaxFor(ivAtk); }
   uint8_t trMaxDef() const { return trMaxFor(ivDef); }
   uint8_t trMaxSpe() const { return trMaxFor(ivSpe); }
+  uint8_t trMaxHp() const { return trMaxFor(ivHp); }
   void play();
   void toggleLight();
   bool isNightHour() const;
